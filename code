@@ -1,0 +1,207 @@
+#Install and Import Necessary Libraries
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from yellowbrick.cluster import KElbowVisualizer
+from scipy.cluster.hierarchy import dendrogram, linkage
+!pip install bioinfokit
+from bioinfokit.visuz import cluster
+from collections import Counter
+from statsmodels.graphics.mosaicplot import mosaic
+from itertools import product
+from warnings import filterwarnings
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+from sklearn.model_selection import train_test_split
+filterwarnings("ignore")
+
+#Load the Dataset
+data = pd.read_csv('/content/mcdonalds.csv')
+
+#Display dataset information and basic statistics
+print(data.head(20))
+print(data.info())
+print(data.describe())
+print(data.isnull().sum())
+print(data.dtypes)
+
+#Frequency counts for specific columns
+print(data['Gender'].value_counts())
+print(data['VisitFrequency'].value_counts())
+print(data['Like'].value_counts())
+print(data['Age'].value_counts())
+
+#Convert specific columns to binary values for Yes/No questions
+binary_data = (data.iloc[:, :11] == "Yes").astype(int)
+column_means = np.round(binary_data.mean(), 2)
+print(column_means)
+
+#Gender distribution pie chart
+gender_labels = ['Female', 'Male']
+gender_sizes = data['Gender'].value_counts()
+colors = ['pink', 'blue']
+explode = [0, 0.1]
+plt.figure(figsize=(7, 7))
+plt.pie(gender_sizes, colors=colors, explode=explode, labels=gender_labels, shadow=True, autopct='%.2f%%')
+plt.title('Gender Distribution', fontsize=20)
+plt.axis('off')
+plt.legend()
+plt.show()
+
+#Age distribution bar plot
+plt.figure(figsize=(25, 8))
+age_plot = sns.countplot(x=data['Age'], palette='viridis')
+age_plot.bar_label(age_plot.containers[0])
+plt.title('Age Distribution of Customers', fontsize=20)
+plt.show()
+
+#Psychographic segmentation based on 'Like'
+data['Like'] = data['Like'].replace({'I hate it!-5': '-5', 'I love it!+5': '+5'})
+sns.catplot(data=data, x="Like", y="Age", height=5, aspect=2, palette="Set2", kind="swarm")
+plt.title('McDonald\'s Likability by Age', fontsize=20)
+plt.show()
+
+#Label encoding for categorical columns and dropping unnecessary columns
+columns_to_encode = ['yummy', 'convenient', 'spicy', 'fattening', 'greasy', 'fast', 'cheap', 'tasty', 'expensive', 'healthy', 'disgusting']
+data_encoded = data.drop(columns=['Like', 'Age', 'VisitFrequency', 'Gender']).apply(LabelEncoder().fit_transform)
+
+#Exploratory Data Analysis
+def perform_eda(df, fig_size):
+    categorical = []
+    continuous = []
+    plt.figure(figsize=fig_size)
+    subplot_index = 1
+
+    for column in df.columns:
+        if df[column].dtype == "object":
+            categorical.append(column)
+            plt.subplot((df.shape[1] + 1) // 2, 2, subplot_index)
+            subplot_index += 1
+            sns.countplot(data=df, x=column)
+        else:
+            continuous.append(column)
+
+    for column in continuous:
+        plt.subplot((df.shape[1] + 1) // 2, 2, subplot_index)
+        subplot_index += 1
+        sns.histplot(df[column].dropna(), kde=False)
+
+    print(df[continuous].corr())
+
+#Apply the EDA function to the dataset
+perform_eda(data, (20, 30))
+
+#Apply PCA
+scaled_data = StandardScaler().fit_transform(data_encoded)
+pca = PCA(n_components=11)
+principal_components = pca.fit_transform(scaled_data)
+principal_df = pd.DataFrame(data=principal_components, columns=['PC'+str(i) for i in range(1, 12)])
+print(pca.explained_variance_ratio_)
+
+#Display PCA loadings
+loadings_df = pd.DataFrame(pca.components_.T, columns=['PC'+str(i) for i in range(1, 12)], index=data_encoded.columns)
+plt.figure(figsize=(20, 15))
+sns.heatmap(loadings_df, annot=True, cmap='plasma')
+plt.show()
+
+#2D biplot of PCA results
+pca_scores = PCA().fit_transform(scaled_data)
+cluster.biplot(cscore=pca_scores, loadings=pca.components_, labels=data_encoded.columns, var1=round(pca.explained_variance_ratio_[0]*100, 2), var2=round(pca.explained_variance_ratio_[1]*100, 2), show=True, dim=(10, 5))
+
+#Elbow method for optimal number of clusters
+model = KMeans()
+visualizer = KElbowVisualizer(model, k=(1,12))
+visualizer.fit(data_encoded)
+visualizer.show()
+
+#Apply K-Means clustering
+kmeans = KMeans(n_clusters=4, init='k-means++', random_state=0).fit(data_encoded)
+data['cluster_num'] = kmeans.labels_
+print('Labels:', kmeans.labels_)
+print('WCSS:', kmeans.inertia_)
+print('No. of iterations:', kmeans.n_iter_)
+print('Cluster centroids:', kmeans.cluster_centers_)
+print('Cluster size:', Counter(kmeans.labels_))
+
+#Visualize clusters
+sns.scatterplot(data=principal_df, x="PC1", y="PC2", hue=kmeans.labels_)
+plt.scatter(kmeans.cluster_centers_[:,0], kmeans.cluster_centers_[:,1], marker="X", c="r", s=80, label="centroids")
+plt.legend()
+plt.show()
+
+#Crosstab and mosaic plot for 'Like'
+like_crosstab = pd.crosstab(data['cluster_num'], data['Like'])
+like_crosstab = like_crosstab[['-5','-4','-3','-2','-1','0','+1','+2','+3','+4','+5']]
+plt.figure(figsize=(7, 7))
+mosaic(like_crosstab.stack())
+plt.show()
+
+#Crosstab and mosaic plot for 'Gender'
+gender_crosstab = pd.crosstab(data['cluster_num'], data['Gender'])
+plt.figure(figsize=(7, 5))
+mosaic(gender_crosstab.stack())
+plt.show()
+
+#Box plot for 'age'
+sns.boxplot(x="cluster_num", y="Age", data=data)
+plt.show()
+
+#Segment evaluation based on 'VisitFrequency', 'Like', and 'Gender
+data['VisitFrequency'] = LabelEncoder().fit_transform(data['VisitFrequency'])
+data['Like'] = LabelEncoder().fit_transform(data['Like'])
+data['Gender'] = LabelEncoder().fit_transform(data['Gender'])
+
+visit_mean = data.groupby('cluster_num')['VisitFrequency'].mean().reset_index()
+like_mean = data.groupby('cluster_num')['Like'].mean().reset_index()
+gender_mean = data.groupby('cluster_num')['Gender'].mean().reset_index()
+
+segment_evaluation = gender_mean.merge(like_mean, on='cluster_num').merge(visit_mean, on='cluster_num')
+plt.figure(figsize=(9, 4))
+sns.scatterplot(x="VisitFrequency", y="Like", data=segment_evaluation, s=400, color="y")
+plt.title("Segment Evaluation", fontsize=15)
+plt.xlabel("Visit Frequency", fontsize=12)
+plt.ylabel("Like", fontsize=12)
+plt.show()
+
+#Hierarchical clustering
+transposed_data = np.transpose(data_encoded)
+linked_data = linkage(transposed_data, method='average')
+dendrogram(linked_data, truncate_mode='lastp', p=12, leaf_rotation=90, leaf_font_size=12, show_contracted=True)
+plt.show()
+
+#Plot PCA score
+plt.scatter(principal_components[:, 0], principal_components[:, 1], alpha=0.7)
+plt.xlabel('Principal Component 1')
+plt.ylabel('Principal Component 2')
+plt.title('Projection on First Two Principal Components')
+plt.show()
+
+#Decision Tree
+
+#Label encoding for categorical columns
+label_encoder_gender = LabelEncoder()
+label_encoder_visit_freq = LabelEncoder()
+label_encoder_like = LabelEncoder()
+
+data['Gender'] = label_encoder_gender.fit_transform(data['Gender'])
+data['VisitFrequency'] = label_encoder_visit_freq.fit_transform(data['VisitFrequency'])
+data['Like'] = label_encoder_like.fit_transform(data['Like'])
+
+#Selecting features and target variable
+features = binary_data
+target = data['Like']
+
+#Splitting the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.2, random_state=42)
+
+#Training the decision tree classifier
+clf = DecisionTreeClassifier(random_state=42)
+clf.fit(X_train, y_train)
+
+#Plotting the decision tree
+plt.figure(figsize=(20,10))
+plot_tree(clf, feature_names=features.columns, class_names=label_encoder_like.classes_.astype(str), filled=True, rounded=True)
+plt.show()
