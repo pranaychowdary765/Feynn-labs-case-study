@@ -18,3 +18,6 @@ Negative Perception Focus: Identify market segments with a negative perception o
 
 Conclusion:
 This case study provides insights into how McDonald’s can leverage market segmentation to improve its brand image and tailor its marketing strategies effectively.
+
+Drive link to the google colab with functional code:
+https://colab.research.google.com/drive/1-yxjJQXErpuCPrkiIZXuI4c5kGY1Zd_4?usp=sharing
